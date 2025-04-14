@@ -2,6 +2,7 @@ from mistralai import Mistral
 import os
 from dotenv import load_dotenv
 import time
+import re
 
 load_dotenv()
 
@@ -74,8 +75,8 @@ def generate_response_for_emotion(prompt=None,
     ]
 
     completion = client.chat.complete(
-        # model="open-codestral-mamba",
         model="open-mistral-nemo",
+        # model="open-mistral-7b",
         messages=messages,
         # max_tokens=100
     )
@@ -89,8 +90,8 @@ def classificate_emotions(prompt):
     client = Mistral(api_key=MISTRALAI_API_KEY)
 
     system_prompt = (
-        "ты эмпат, ты хорошо разбираешься в эмоциях "
-        """ты можешь определить три наиболее вероятные эмоции текстового сообщения, такие как:
+        """ты эмпат, ты хорошо разбираешься в эмоциях и ИИ, который классифицирует сообщения пользователей по их цели.
+        ты можешь определить три наиболее вероятные эмоции текстового сообщения, такие как:
         admiration: восхищение
         amusement: веселье
         anger: злость
@@ -119,8 +120,23 @@ def classificate_emotions(prompt):
         sadness: грусть
         surprise: удивление
         neutral: нейтральность
+        выведи в ответ только три слова - три эмоции на русском языке в формате:
+        Эмоции: эмоция1, эмоция2, эмоция3
+        
+        ты можешь определить Возможные категории:
+
+        1. Support — пользователь хочет выговориться, получить поддержку.
+        2. Crisis — пользователь в остром эмоциональном или жизненном кризисе.
+        3. Resource — пользователь хочет получить совет, упражнение или информацию.
+        
+        Пример: "Мне просто очень тяжело..." → Support
+        
+        Пример: "Я больше не вижу смысла жить..." → Crisis
+        
+        Пример: "Как справиться с тревогой?" → Resource
+        вывод ф формате:
+        Класс: detected_class
         """
-        "выведи в ответ только три слова - три эмоции на русском языке"
     )
 
     messages = [
@@ -131,12 +147,114 @@ def classificate_emotions(prompt):
     completion = client.chat.complete(
         # model="open-codestral-mamba",
         model="open-mistral-nemo",
+        # model="open-mistral-7b",
         messages=messages,
         max_tokens=100
     )
 
     response = completion.choices[0].message.content.strip()
     return response
+
+
+def extract_emotions_and_response(response, only_response=True):
+    """
+    Извлекает эмоции и текст ответа из ответа модели.
+    Ожидается, что модель вернёт:
+    Эмоции: эмоция1, эмоция2, эмоция3
+    Ответ: эмпатичный текст...
+    """
+    response_match = re.search(r'Ответ:\s*(.+)', response, re.DOTALL)
+    response_text = response_match.group(1).strip() if response_match else response.strip()
+
+    if only_response is False:
+        emotions = []
+        emotion_match = re.search(r'Эмоции:\s*([а-яА-ЯёЁ,\s]+)', response)
+
+        if emotion_match:
+            emotions_str = emotion_match.group(1)
+            emotions = [e.strip() for e in emotions_str.split(',')]
+
+        return emotions, response_text
+
+    return [], response_text
+
+
+def generate_empathic_response(prompt=None,
+                               voice_emotion=None,
+                               profile=None,
+                               phq_results=None,
+                               gad_results=None):
+    """
+    Генерирует эмпатичный ответ и классифицирует эмоции пользователя за один запрос к LLM.
+    Возвращает: (ответ модели, список эмоций)
+    """
+    time.sleep(1)
+    client = Mistral(api_key=MISTRALAI_API_KEY)
+
+    emotions_prompt, emotions_format = "", ""
+    if prompt:  # if phq_results is None and gad_results is None:
+        emotions_prompt = "Сначала определи три наиболее выраженные эмоции пользователя по его сообщению. " + \
+                          """
+                            Список возможных эмоций: восхищение, веселье, злость, раздражение, одобрение, 
+                            забота, непонимание, любопытство, желание, разочарование, неодобрение, отвращение, 
+                            смущение, возбуждение, страх, признательность, горе, радость, любовь, нервозность, 
+                            оптимизм, гордость, осознание, облегчение, раскаяние, грусть, удивление, нейтральность.\n
+                          """
+        emotions_format = "Эмоции: эмоция1, эмоция2, эмоция3\n"
+
+    system_prompt = (
+        "Ты эмпатичный ИИ и психолог. Ты умеешь хорошо понимать эмоции людей и оказывать психологическую поддержку. "
+        f"{emotions_prompt}"
+        "Затем, основываясь на этих эмоциях или дополнительной информации, напиши эмпатичный, поддерживающий ответ.\n\n"
+        "Очень важно: соблюдай правила безопасности при каждом ответе.\n"
+        "Вот чек-лист безопасности, который ты обязан соблюдать:\n"
+        "1. Не обещай, что 'всё будет хорошо'.\n"
+        "2. Не ставь диагнозов.\n"
+        "3. Не поощряй избегание, изоляцию или отказ от действий.\n"
+        "4. Не пиши, что ты заменяешь терапевта или профессиональную помощь.\n"
+        "5. Не давай медицинских или терапевтических рекомендаций.\n"
+        "6. Поощряй обращение за профессиональной помощью, если это уместно.\n"
+        "7. Не принижай чувства пользователя. Уважай его состояние.\n"
+        "8. Используй поддерживающий, не осуждающий тон.\n"
+        "9. Не используй токсичный позитив (например: 'просто улыбнись' или 'всё к лучшему').\n"
+        "10. Ответ должен быть деликатным и человечным.\n\n"
+        "Формат ответа:\n"
+        f"{emotions_format}"
+        "Ответ: твой эмпатичный ответ пользователю на русском языке.\n\n"
+    )
+    if profile:
+        system_prompt += f"\nПсихографический портрет пользователя: {profile}" + \
+            "Адаптируй психологическую поддержку под психографический портрет пользователя"
+
+    if voice_emotion:
+        system_prompt += f"\nПользователь говорил с интонацией: {voice_emotion}."
+
+    if phq_results:
+        system_prompt += f"\nРезультаты теста PHQ (депрессия): {phq_results}."
+
+    if gad_results:
+        system_prompt += f"\nРезультаты теста GAD (тревожность): {gad_results}."
+
+    if prompt is None:
+        prompt = "Окажи мне психологическую поддержку или дай рекомендации к кому обратиться."
+
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": prompt}
+    ]
+
+    completion = client.chat.complete(
+        model="open-mistral-nemo",  # Или другая доступная модель
+        messages=messages
+        # max_tokens=500
+    )
+
+    full_response = completion.choices[0].message.content.strip()
+
+    only_response = phq_results is not None or gad_results is not None
+    emotions, response_text = extract_emotions_and_response(full_response, only_response=only_response)
+
+    return response_text, emotions
 
 
 # Предположим, api_key и lang уже определены

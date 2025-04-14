@@ -3,6 +3,7 @@ import psycopg2
 from db import hash_user_id
 import os
 from dotenv import load_dotenv
+import uuid
 
 
 load_dotenv()
@@ -45,13 +46,15 @@ async def save_user_consent(user_id):
     cursor.execute("SELECT 1 FROM user_consents WHERE user_id = %s LIMIT 1", (hashed_id,))
     exists = cursor.fetchone() is not None
 
+    user_uuid = str(uuid.uuid4())
+
     if not exists:
 
         cursor.execute("""
-            INSERT INTO user_consents (user_id, consent_given, consent_date)
-            VALUES (%s, %s, %s)
+            INSERT INTO user_consents (id, user_id, consent_given, consent_date)
+            VALUES (%s, %s, %s, %s)
             ON CONFLICT (user_id) DO UPDATE SET consent_given = TRUE, consent_date = EXCLUDED.consent_date
-        """, (hashed_id, True, datetime.datetime.utcnow()))
+        """, (user_uuid, hashed_id, True, datetime.datetime.utcnow()))
 
         conn.commit()
         cursor.close()
