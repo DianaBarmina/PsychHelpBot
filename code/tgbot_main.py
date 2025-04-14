@@ -7,7 +7,7 @@ from pydub import AudioSegment
 from dotenv import load_dotenv
 import soundfile as sf
 import whisper
-from mistralai_experiment import generate_response_for_emotion, classificate_emotions
+from mistralai_experiment import generate_response_for_emotion, classificate_emotions, generate_empathic_response
 from tests_questionare import PHQ9_QUESTIONS, GAD7_QUESTIONS, Questionnaire, interpret_phq9, \
     interpret_gad7
 from test_result import save_test_result, confirm_delete_tests_request, delete_test_results, \
@@ -214,7 +214,7 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
 
                     if checked_user:
                         await save_test_result(checked_user, "phq_2", total)
-                        full_profile = await get_formatted_profile_from_db(user_id)
+                        full_profile = await get_formatted_profile_from_db(checked_user)
                     else:
                         full_profile = None
 
@@ -243,7 +243,7 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
             results = f"Результат теста {questionnaire.name}: {total} балла" + interpretation
             if checked_user:
                 await save_test_result(checked_user, test_type, total)
-                full_profile = await get_formatted_profile_from_db(user_id)
+                full_profile = await get_formatted_profile_from_db(checked_user)
             else:
                 full_profile = None
 
@@ -361,7 +361,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 text_emotions=text_emotions_lower,
                 voice_emotions=[voice_emotion]
             )
-            full_profile = await get_formatted_profile_from_db(user_id)
+            full_profile = await get_formatted_profile_from_db(checked_user)
         else:
             full_profile = None
 
@@ -459,15 +459,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif text == "Пройти тест на тревожность":
         questionnaire = GAD7
     else:
-        text_emotions = classificate_emotions(text)
-
-        text_emotions = text_emotions.split(", ")
-        text_emotions_lower = [emotion.lower() for emotion in text_emotions]
+        '''text_emotions = classificate_emotions(text)
 
         await update.message.reply_text(
             f"*Распознанные эмоции (смысл сообщения):* {text_emotions}",
             parse_mode="Markdown"
         )
+
+        text_emotions = text_emotions.split(", ")
+        text_emotions_lower = [emotion.lower() for emotion in text_emotions]
 
         if checked_user:
             await save_emotions_to_db(
@@ -485,7 +485,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 parse_mode="Markdown"
             )
 
-        response = generate_response_for_emotion(text, text_emotions=text_emotions, profile=full_profile)
+        response = generate_response_for_emotion(text, text_emotions=text_emotions, profile=full_profile)'''
+        if checked_user:
+            full_profile = await get_formatted_profile_from_db(checked_user)
+        else:
+            full_profile = None
+        response, emotions = generate_empathic_response(text, profile=full_profile)
+        print(emotions)
         await update.message.reply_text(response)
 
     context.user_data['test'] = questionnaire

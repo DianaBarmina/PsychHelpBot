@@ -251,7 +251,7 @@ async def delete_profile_from_db(user_id: int):
     return await asyncio.to_thread(_sync_delete_profile_from_db, user_id)
 
 
-def _sync_delete_profile_from_db(user_id: int):
+def _sync_delete_profile_from_db(user_id: str):
     #encrypted_id = hash_user_id(user_id)#encrypt_user_id(user_id)
     conn = None
     try:
@@ -284,12 +284,12 @@ def _sync_delete_profile_from_db(user_id: int):
             conn.close()
 
 
-async def get_profile_from_db(user_id: int):
+async def get_profile_from_db(user_id: str):
     """Асинхронная обёртка для синхронного получения профиля пользователя."""
     return await asyncio.to_thread(_sync_get_profile_from_db, user_id)
 
 
-def _sync_get_profile_from_db(user_id: int):
+def _sync_get_profile_from_db(user_id: str):
     try:
         conn = psycopg2.connect(**DB_PARAMS)
         cur = conn.cursor()
@@ -389,7 +389,7 @@ def format_profile_answers(answers: dict) -> str:
     return " ".join(result_parts)
 
 
-async def get_formatted_profile_from_db(user_id: int) -> str | None:
+async def get_formatted_profile_from_db(user_id: str) -> str | None:
     profile = await get_profile_from_db(user_id)
     if not profile:
         return None
