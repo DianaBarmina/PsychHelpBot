@@ -168,11 +168,11 @@ def extract_emotions_and_response(response, only_response=True):
 
     if only_response is False:
         emotions = []
-        emotion_match = re.search(r'Эмоции:\s*([а-яА-ЯёЁ,\s]+)', response)
+        emotion_match = re.search(r'Эмоции:\s*([а-яА-ЯёЁ,\s]+)(?=\n|$)', response)
 
         if emotion_match:
             emotions_str = emotion_match.group(1)
-            emotions = [e.strip() for e in emotions_str.split(',')]
+            emotions = [e.strip() for e in emotions_str.split(',') if e.strip()]
 
         return emotions, response_text
 
@@ -191,8 +191,9 @@ def generate_empathic_response(prompt=None,
     time.sleep(1)
     client = Mistral(api_key=MISTRALAI_API_KEY)
 
+    # if phq_results is None and gad_results is None:
     emotions_prompt, emotions_format = "", ""
-    if prompt:  # if phq_results is None and gad_results is None:
+    if prompt:
         emotions_prompt = "Сначала определи три наиболее выраженные эмоции пользователя по его сообщению. " + \
                           """
                             Список возможных эмоций: восхищение, веселье, злость, раздражение, одобрение, 

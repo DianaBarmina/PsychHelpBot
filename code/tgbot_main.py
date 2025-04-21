@@ -11,11 +11,11 @@ from mistralai_experiment import generate_response_for_emotion, classificate_emo
 from tests_questionare import PHQ9_QUESTIONS, GAD7_QUESTIONS, Questionnaire, interpret_phq9, \
     interpret_gad7
 from test_result import save_test_result, confirm_delete_tests_request, delete_test_results, \
-    handle_delete_tests_callback, check_test_results_exist
+    handle_delete_tests_callback, check_test_results_exist, create_tests_chart
 from psychograph_profile import start_psychographic_profile, handle_profile_response, confirm_delete_profile,\
     handle_profile_delete_callback, get_formatted_profile_from_db, delete_profile_from_db, check_user_profile_exist
 from save_emotions import save_emotions_to_db, handle_delete_emotions_callback, confirm_delete_emotions_request, \
-    delete_user_emotions, check_emotions_exist
+    delete_user_emotions, check_emotions_exist, get_emotions_stats, create_emotions_chart
 from voice_convert import convert_ogg_to_wav
 from confidential import save_user_consent, check_user_consent, consent_text, delete_user_consent
 
@@ -70,7 +70,9 @@ def send_personalized_keyboard(is_checked):
             [KeyboardButton("📋 Пройти психографический опрос")],
             [KeyboardButton("🗑️ Удалить психографический профиль")],
             [KeyboardButton("🗑️ Удалить результаты тестов")],
-            [KeyboardButton("🗑️ Удалить историю эмоций")]
+            [KeyboardButton("🗑️ Удалить историю эмоций")],
+            [KeyboardButton("Мои эмоции: история")],
+            [KeyboardButton("Мои тесты: история")]
         ])
 
     keyboard.append([KeyboardButton("/edit_privacy")])
@@ -150,7 +152,7 @@ def predict_emotion(audio_path):
     return predicted_label
 
 
-async def send_questionnaire_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def send_questionnaire_question1(update: Update, context: ContextTypes.DEFAULT_TYPE):
     questionnaire = context.user_data['test']
     idx = context.user_data['question_index']
     question = questionnaire.get_question(idx)
@@ -167,6 +169,86 @@ async def send_questionnaire_question(update: Update, context: ContextTypes.DEFA
         await update.message.reply_text(question, reply_markup=reply_markup)
 
 
+async def send_questionnaire_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    questionnaire = context.user_data['test']
+    idx = context.user_data['question_index']
+
+    # Проверяем, нужно ли отправить вступительное сообщение
+    if idx == 0:
+        intro_text = "Как часто вас беспокоили следующие проблемы за последние 2 недели?"
+        keyboard = [
+            [InlineKeyboardButton("Начать тест", callback_data="start_questions")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        if update.callback_query:
+            await update.callback_query.message.edit_text(intro_text, reply_markup=reply_markup)
+        else:
+            await update.message.reply_text(intro_text, reply_markup=reply_markup)
+        return
+
+    # Отправка обычного вопроса теста
+    question = questionnaire.get_question(idx - 1)  # -1 потому что первый индекс теперь для вступления
+
+    keyboard = [
+        [InlineKeyboardButton(text, callback_data=f"answer_{value}")]
+        for text, value in questionnaire.get_options()
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    if update.callback_query:
+        await update.callback_query.message.edit_text(question, reply_markup=reply_markup)
+    else:
+        await update.message.reply_text(question, reply_markup=reply_markup)
+
+
+async def emotions_period_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    user_id = query.from_user.id
+    checked_user = await check_user_consent(user_id)
+
+    emotions_type = context.user_data.get('emotions_type')
+
+    period_map = {
+        "emotions_week": 7,
+        "emotions_month": 30,
+        "emotions_3months": 90,
+        "emotions_year": 365
+    }
+
+    period_days = period_map.get(query.data, 7)
+    period_name = query.data.replace("emotions_", "").replace("3months", "3 месяца")
+
+    try:
+        # Получаем данные из БД
+        #stats = await get_emotions_stats(checked_user, period_days)
+        stats = await get_emotions_stats(checked_user, period_days, emotions_type)  # Передаем тип эмоций
+
+        if not stats:
+            await query.edit_message_text(f"Нет данных об эмоциях за {period_name}")
+            return
+
+        # Создаем диаграмму
+        #chart = await create_emotions_chart(stats, period_name)
+        chart = await create_emotions_chart(stats, period_name, emotions_type)  # Передаем тип для стилизации
+
+        # Отправляем изображение
+        await context.bot.send_photo(
+            chat_id=query.message.chat_id,
+            photo=chart,
+            caption=f"Статистика {'текстовых' if emotions_type == 'text' else 'голосовых'} эмоций за {period_name}"
+        )
+
+        # Удаляем сообщение с кнопками
+        await query.message.delete()
+
+    except Exception as e:
+        print(f"Error generating emotions chart: {e}")
+        await query.edit_message_text("Произошла ошибка при генерации статистики")
+
+
 async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -174,6 +256,11 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
 
     user_id = query.from_user.id
     checked_user = await check_user_consent(user_id)
+    #new
+    if data == "start_questions":
+        context.user_data['question_index'] = 1  # Начинаем с первого вопроса
+        await send_questionnaire_question(update, context)
+        return
 
     if data.startswith("start_"):
         test_name = data.split("_")[1]
@@ -195,7 +282,7 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
 
         # Раннее завершение PHQ-9
         if questionnaire.name.startswith("PHQ") and not context.user_data.get("phq9_short_check_done"):
-            if index == 2:
+            if index == 3:
                 context.user_data['phq9_short_check_done'] = True
                 total = context.user_data['score']
 
@@ -218,14 +305,14 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
                     else:
                         full_profile = None
 
-                    response = generate_response_for_emotion(phq_results=phq_results,
-                                                             profile=full_profile
-                                                             )
+                    #response = generate_response_for_emotion(phq_results=phq_results, profile=full_profile)
+
+                    response, emotions = generate_empathic_response(phq_results=phq_results, profile=full_profile)
 
                     await query.message.reply_text(response)
                 return
 
-        if index < len(questionnaire.questions):
+        if index < len(questionnaire.questions)+1:
             await send_questionnaire_question(update, context)
         else:
             total = context.user_data['score']
@@ -248,13 +335,15 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
                 full_profile = None
 
             if questionnaire == PHQ9:
-                response = generate_response_for_emotion(phq_results=results,
-                                                         profile=full_profile
-                                                         )
+                #response = generate_response_for_emotion(phq_results=results,
+                #                                         profile=full_profile
+                #                                         )
+                response, emotions = generate_empathic_response(phq_results=results, profile=full_profile)
             else:
-                response = generate_response_for_emotion(gad_results=results,
-                                                         profile=full_profile
-                                                         )
+                #response = generate_response_for_emotion(gad_results=results,
+                #                                         profile=full_profile
+                #                                         )
+                response, emotions = generate_empathic_response(gad_results=results, profile=full_profile)
 
             await query.message.reply_text(response)
 
@@ -344,7 +433,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="Markdown"
         )
 
-        text_emotions = classificate_emotions(transcription)
+        '''text_emotions = classificate_emotions(transcription)
         await update.message.reply_text(
             f"*Распознанные эмоции (смысл сообщения):* {text_emotions}",
             parse_mode="Markdown"
@@ -353,14 +442,14 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # user_id = update.message.from_user.id
 
         text_emotions = text_emotions.split(", ")
-        text_emotions_lower = [em.lower() for em in text_emotions]
+        text_emotions_lower = [em.lower() for em in text_emotions]'''
 
         if checked_user:
-            await save_emotions_to_db(
+            '''await save_emotions_to_db(
                 user_id=checked_user,
                 text_emotions=text_emotions_lower,
                 voice_emotions=[voice_emotion]
-            )
+            )'''
             full_profile = await get_formatted_profile_from_db(checked_user)
         else:
             full_profile = None
@@ -371,11 +460,21 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 parse_mode="Markdown"
             )
 
-        response = generate_response_for_emotion(transcription,
+        '''response = generate_response_for_emotion(transcription,
                                                  text_emotions=text_emotions,
                                                  voice_emotion=voice_emotion,
                                                  profile=full_profile
-                                                 )
+                                                 )'''
+        response, emotions = generate_empathic_response(transcription,
+                                                        #text_emotions=text_emotions,
+                                                        voice_emotion=voice_emotion,
+                                                        profile=full_profile)
+        if checked_user:
+            await save_emotions_to_db(
+                user_id=checked_user,
+                text_emotions=emotions,
+                voice_emotions=[voice_emotion]
+            )
 
         await update.message.reply_text(response)
 
@@ -454,6 +553,65 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
 
+    if text == "Мои эмоции: история":
+        if not checked_user:
+            await update.message.reply_text(
+                "Вы не можете просмотреть историю эмоций, так как не дали согласие на обработку данных",
+                parse_mode="Markdown"
+            )
+            return
+
+        context.user_data["checked_user"] = checked_user
+        if not await check_emotions_exist(checked_user):
+            await update.message.reply_text(
+                "У вас пока нет сохраненных эмоций в истории",
+                parse_mode="Markdown"
+            )
+            return
+
+        keyboard = [
+            [InlineKeyboardButton("📝 Текстовые эмоции", callback_data="emotions_type_text")],
+            [InlineKeyboardButton("🎤 Голосовые эмоции", callback_data="emotions_type_voice")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await update.message.reply_text(
+            "Какие эмоции вы хотите проанализировать?",
+            reply_markup=reply_markup
+        )
+        return
+
+    if text == "Мои тесты: история":
+        await handle_tests_history(update, context)
+        '''if not checked_user:
+            await update.message.reply_text(
+                "Вы не можете просмотреть историю тестов, так как не дали согласие на обработку данных",
+                parse_mode="Markdown"
+            )
+            return
+
+        context.user_data["checked_user"] = checked_user
+        if not await check_emotions_exist(checked_user):
+            await update.message.reply_text(
+                "У вас пока нет пройденных тестов",
+                parse_mode="Markdown"
+            )
+            return
+
+        keyboard = [
+            [InlineKeyboardButton("За неделю", callback_data="tests_period_week")],
+            [InlineKeyboardButton("За месяц", callback_data="tests_period_month")],
+            [InlineKeyboardButton("За 3 месяца", callback_data="tests_period_3months")],
+            [InlineKeyboardButton("За год", callback_data="tests_period_year")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await update.message.reply_text(
+            "Выберите период для просмотра результатов тестов:",
+            reply_markup=reply_markup
+        )'''
+        return
+
     if text == "Пройти тест на депрессию":
         questionnaire = PHQ9
     elif text == "Пройти тест на тревожность":
@@ -492,17 +650,116 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             full_profile = None
         response, emotions = generate_empathic_response(text, profile=full_profile)
         print(emotions)
+        if checked_user:
+            await save_emotions_to_db(
+                user_id=checked_user,
+                text_emotions=emotions,
+                voice_emotions=[]
+            )
         await update.message.reply_text(response)
 
     context.user_data['test'] = questionnaire
     context.user_data['score'] = 0
     context.user_data['question_index'] = 0
-    context.user_data['phq9_short_check_done'] = False  # только для PHQ-9
+    context.user_data['phq9_short_check_done'] = False
 
     reply_keyboard = send_personalized_keyboard(is_checked=False)
     await update.message.reply_text(f"Начинаем тест *{questionnaire.name}*", parse_mode="Markdown",
                                     reply_markup=reply_keyboard)
     await send_questionnaire_question(update, context)
+
+
+async def emotions_type_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработчик выбора типа эмоций"""
+    query = update.callback_query
+    await query.answer()
+    print(query.data.split('_')[-1])
+
+    context.user_data['emotions_type'] = query.data.split('_')[-1]
+
+    keyboard = [
+        [InlineKeyboardButton("За неделю", callback_data="emotions_period_week")],
+        [InlineKeyboardButton("За месяц", callback_data="emotions_period_month")],
+        [InlineKeyboardButton("За 3 месяца", callback_data="emotions_period_3months")],
+        [InlineKeyboardButton("За год", callback_data="emotions_period_year")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await query.edit_message_text(
+        text="Выберите период для анализа:",
+        reply_markup=reply_markup
+    )
+
+
+async def handle_tests_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработчик просмотра истории тестов"""
+    user_id = update.message.from_user.id
+    checked_user = await check_user_consent(user_id)
+
+    if not checked_user:
+        await update.message.reply_text(
+            "Вы не можете просмотреть историю тестов, так как не дали согласие на обработку данных",
+            parse_mode="Markdown"
+        )
+        return
+
+    if not await check_test_results_exist(checked_user):
+        await update.message.reply_text(
+            "У вас пока нет пройденных тестов",
+            parse_mode="Markdown"
+        )
+        return
+
+    keyboard = [
+        [InlineKeyboardButton("За неделю", callback_data="tests_period_week")],
+        [InlineKeyboardButton("За месяц", callback_data="tests_period_month")],
+        [InlineKeyboardButton("За 3 месяца", callback_data="tests_period_3months")],
+        [InlineKeyboardButton("За год", callback_data="tests_period_year")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await update.message.reply_text(
+        "Выберите период для просмотра результатов тестов:",
+        reply_markup=reply_markup
+    )
+
+
+async def tests_period_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработчик выбора периода для тестов"""
+    query = update.callback_query
+    await query.answer()
+
+    user_id = query.from_user.id
+    checked_user = await check_user_consent(user_id)
+
+    period_map = {
+        "tests_week": 7,
+        "tests_month": 30,
+        "tests_3months": 90,
+        "tests_year": 365
+    }
+
+    period_days = period_map.get(query.data, 30)
+    period_name = query.data.replace("tests_period", "").replace("3months", "3 месяца")
+
+    try:
+        chart = await create_tests_chart(checked_user, period_days)
+
+        if not chart:
+            await query.edit_message_text(f"Нет данных о тестах за {period_name}")
+            return
+
+        await context.bot.send_photo(
+            chat_id=query.message.chat_id,
+            photo=chart,
+            caption=f"Динамика результатов тестов за {period_name}"
+        )
+
+        await query.message.delete()
+
+    except Exception as e:
+        print(f"Error generating tests chart: {e}")
+        await query.edit_message_text("Произошла ошибка при генерации графика")
 
 
 def main():
@@ -514,11 +771,16 @@ def main():
     application.add_handler(CallbackQueryHandler(handle_profile_delete_callback, pattern="^delete_profile_"))
     application.add_handler(CallbackQueryHandler(handle_delete_tests_callback, pattern="^delete_tests_"))
     application.add_handler(CallbackQueryHandler(handle_delete_emotions_callback, pattern="^delete_emotions_"))
+    application.add_handler(CallbackQueryHandler(emotions_type_callback, pattern="^emotions_type_"))
+    application.add_handler(CallbackQueryHandler(emotions_period_callback, pattern="^emotions_period_"))
+    application.add_handler(CallbackQueryHandler(tests_period_callback, pattern="^tests_period_"))
     application.add_handler(CallbackQueryHandler(handle_callback_query))
 
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     application.add_handler(MessageHandler(filters.VOICE, handle_voice))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_profile_response))
+    application.add_handler(MessageHandler(filters.Text("Мои эмоции: история"), handle_message))
+    application.add_handler(MessageHandler(filters.Text("Мои тесты: история"), handle_tests_history))
 
     application.add_handler(CommandHandler("profile", start_psychographic_profile))
     application.add_handler(CommandHandler("delete_profile", confirm_delete_profile))

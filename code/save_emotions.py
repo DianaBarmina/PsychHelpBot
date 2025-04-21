@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 import psycopg2
 import asyncpg
 import os
@@ -8,7 +8,8 @@ import asyncio
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ContextTypes
 from db import DB_PARAMS
-
+import matplotlib.pyplot as plt
+from io import BytesIO
 
 
 load_dotenv()
@@ -162,3 +163,119 @@ def _sync_delete_user_emotions(user_id: int):
     finally:
         if conn:
             conn.close()
+
+
+async def get_emotions_stats1(user_id: int, period_days: int) -> dict:
+    """Получаем статистику эмоций за указанный период"""
+    end_date = date.today()
+    start_date = end_date - timedelta(days=period_days)
+
+    conn = await asyncpg.connect(**DB_PARAMS1)
+    try:
+        records = await conn.fetch(
+            """
+            SELECT unnest(text_emotions) as emotion, count(*) as count
+            FROM user_emotions
+            WHERE user_id = $1 AND date_added BETWEEN $2 AND $3
+            GROUP BY emotion
+            ORDER BY count DESC
+            """,
+            user_id, start_date, end_date
+        )
+        return {record['emotion']: record['count'] for record in records}
+    finally:
+        await conn.close()
+
+
+async def create_emotions_chart1(emotions_data: dict, period: str) -> BytesIO:
+    """Создаем столбчатую диаграмму и возвращаем как BytesIO"""
+    if not emotions_data:
+        return None
+
+    emotions = list(emotions_data.keys())
+    counts = list(emotions_data.values())
+
+    plt.figure(figsize=(10, 6))
+    bars = plt.bar(emotions, counts, color='skyblue')
+
+    # Добавляем значения на столбцы
+    for bar in bars:
+        height = bar.get_height()
+        plt.text(bar.get_x() + bar.get_width() / 2., height,
+                 f'{int(height)}', ha='center', va='bottom')
+
+    plt.title(f'Статистика эмоций за {period}')
+    plt.xlabel('Эмоции')
+    plt.ylabel('Количество')
+    plt.xticks(rotation=45)
+    plt.tight_layout()
+
+    buf = BytesIO()
+    plt.savefig(buf, format='png', dpi=100)
+    buf.seek(0)
+    plt.close()
+    return buf
+
+
+async def get_emotions_stats(user_id: int, period_days: int, emotions_type: str) -> dict:
+    """Получаем статистику эмоций за указанный период"""
+    end_date = date.today()
+    start_date = end_date - timedelta(days=period_days)
+
+    conn = None
+    try:
+        conn = await asyncpg.connect(**DB_PARAMS1)
+        print(emotions_type)
+
+        column = 'text_emotions' if emotions_type == 'text' else 'voice_emotions'
+
+        records = await conn.fetch(
+            f"""
+            SELECT unnest({column}) as emotion, count(*) as count
+            FROM user_emotions
+            WHERE user_id = $1 AND date_added BETWEEN $2 AND $3
+            GROUP BY emotion
+            ORDER BY count DESC
+            """,
+            user_id, start_date, end_date
+        )
+        return {record['emotion']: record['count'] for record in records}
+
+    except Exception as e:
+        print(f"[DB ERROR] {e}")
+        return None
+    finally:
+        if conn:
+            await conn.close()
+
+
+async def create_emotions_chart(emotions_data: dict, period: str, emotions_type: str) -> BytesIO:
+    """Создаем столбчатую диаграмму"""
+    if not emotions_data:
+        return None
+
+    emotions = list(emotions_data.keys())
+    counts = list(emotions_data.values())
+
+    plt.figure(figsize=(10, 6))
+    color = '#4CAF50' if emotions_type == 'text' else '#2196F3'  # Зеленый для текста, синий для голоса
+    bars = plt.bar(emotions, counts, color=color)
+
+    # Добавляем значения на столбцы
+    for bar in bars:
+        height = bar.get_height()
+        plt.text(bar.get_x() + bar.get_width() / 2., height,
+                 f'{int(height)}', ha='center', va='bottom')
+
+    title_type = 'Текстовые' if emotions_type == 'text' else 'Голосовые'
+    plt.title(f'{title_type} эмоции за {period}')
+    plt.xlabel('Эмоции')
+    plt.ylabel('Количество')
+    plt.xticks(rotation=45)
+    plt.tight_layout()
+
+    buf = BytesIO()
+    plt.savefig(buf, format='png', dpi=100)
+    buf.seek(0)
+    plt.close()
+    return buf

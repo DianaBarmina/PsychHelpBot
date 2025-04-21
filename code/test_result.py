@@ -1,10 +1,23 @@
 import asyncio
 import psycopg2
-from datetime import datetime
+from datetime import datetime, timedelta
 from db import DB_PARAMS
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ContextTypes
+import asyncpg
+import matplotlib.pyplot as plt
+from io import BytesIO
+import os
+from dotenv import load_dotenv
 
+
+load_dotenv()
+DB_PARAMS1 = {
+    "host": os.getenv("DB_HOST"),
+    "database": os.getenv("DB_NAME"),
+    "user": os.getenv("DB_USER"),
+    "password": os.getenv("DB_PASSWORD"),
+}
 
 async def save_test_result(user_id: int, test_type: str, score: int):
     await asyncio.to_thread(_sync_save_test_result, user_id, test_type, score)
@@ -121,4 +134,67 @@ def _sync_delete_test_results(user_id: int):
     finally:
         if conn:
             conn.close()
+
+
+async def create_tests_chart(user_id: int, period_days: int = 30) -> BytesIO:
+    """Создает линейный график результатов тестов за указанный период"""
+    end_date = datetime.now()
+    start_date = end_date - timedelta(days=period_days)
+
+    conn = None
+    try:
+        conn = await asyncpg.connect(**DB_PARAMS1)
+
+        # Получаем все результаты тестов за период
+        records = await conn.fetch("""
+            SELECT test_type, test_result, datetime 
+            FROM tests_results 
+            WHERE user_id = $1 AND datetime BETWEEN $2 AND $3
+            ORDER BY datetime
+            """, user_id, start_date, end_date)
+
+        if not records:
+            return None
+
+        # Группируем результаты по типам тестов
+        test_data = {}
+        for record in records:
+            test_type = record['test_type']
+            if test_type not in test_data:
+                test_data[test_type] = {'dates': [], 'scores': []}
+            test_data[test_type]['dates'].append(record['datetime'])
+            test_data[test_type]['scores'].append(record['test_result'])
+
+        # Создаем график
+        plt.figure(figsize=(12, 6))
+
+        # Для каждого типа теста добавляем линию
+        for test_type, data in test_data.items():
+            dates = data['dates']
+            scores = data['scores']
+            plt.plot(dates, scores, marker='o', label=test_type.upper())
+
+        # Настройки графика
+        plt.title(f'Динамика результатов тестов за {period_days} дней')
+        plt.xlabel('Дата')
+        plt.ylabel('Баллы')
+        plt.legend()
+        plt.grid(True)
+        plt.xticks(rotation=45)
+        plt.tight_layout()
+
+        # Сохраняем в буфер
+        buf = BytesIO()
+        plt.savefig(buf, format='png', dpi=100)
+        buf.seek(0)
+        plt.close()
+
+        return buf
+
+    except Exception as e:
+        print(f"[DB ERROR] {e}")
+        return None
+    finally:
+        if conn:
+            await conn.close()
 
