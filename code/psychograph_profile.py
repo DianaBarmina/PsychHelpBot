@@ -4,64 +4,24 @@ from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ContextTypes
 from db import DB_PARAMS, load_key, encrypt_user_id, decrypt_user_id, hash_user_id
 import asyncio
-
-
-# 📋 Структура вопросов
-psychographic_questions = [
-    {
-        "key": "demography",
-        "questions": [
-            "Есть ли у вас семья? Из кого она состоит?",
-            "Укажите ваш возрастной диапазон: меньше 18 лет, от 18 до 35, от 35 до 55, больше 55 лет"
-        ]
-    },
-    {
-        "key": "lifestyle_and_values",
-        "questions": [
-            "Чем вы сейчас занимаетесь? (учёба, работа, бизнес, другое)",
-            "Расположите приоритеты от наиболее к наименее важным: семья, общественная жизнь, работа, одиночество.",
-            "Опишите свой типичный распорядок дня.",
-            "Какие факторы влияют на решения о здоровье и благополучии?",
-            "Как вы совмещаете обязанности (работа, учёба и т.д.) и досуг?"
-        ]
-    },
-    {
-        "key": "character",
-        "questions": [
-            "Опишите свою личность тремя словами.",
-            "Вы больше интроверт или экстраверт? Почему?"
-        ]
-    },
-    {
-        "key": "hobby",
-        "questions": [
-            "Какими хобби вы занимаетесь чаще всего?",
-            "Любите ли вы спорт? Какими видами активности занимаетесь?",
-            "Следите ли вы за новостями? Как часто и через какие источники?"
-        ]
-    }
-]
+from psychographic_questions import psychographic_questions
 
 
 async def save_profile_to_db(user_id: int, answers: dict):
-    """Асинхронная обёртка для синхронного psycopg2."""
     return await asyncio.to_thread(_sync_save_profile_to_db, user_id, answers)
 
 
 def _sync_save_profile_to_db(user_id: int, answers: dict):
-    """Синхронная функция для работы с psycopg2."""
     #encrypted_id = hash_user_id(user_id)#encrypt_user_id(user_id)
 
     try:
         conn = psycopg2.connect(**DB_PARAMS)
         cur = conn.cursor()
 
-        # Сначала проверяем существование записи
         cur.execute("SELECT 1 FROM user_profiles WHERE user_id = %s LIMIT 1", (user_id,))
         exists = cur.fetchone() is not None
 
         if exists:
-            # Обновляем только если данные действительно изменились
             cur.execute("""
                 UPDATE user_profiles 
                 SET 
@@ -170,7 +130,6 @@ async def ask_next_profile_question(update: Update, context: ContextTypes.DEFAUL
         await ask_next_profile_question(update, context, user_id)
 
 
-# 💬 Ответ на вопрос
 async def handle_profile_response(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id):
     profile = context.user_data.get("profile")
     if not profile:
@@ -209,7 +168,6 @@ def _sync_check_user_profile_exist(user_id: int) -> bool:
             conn.close()
 
 
-# 🗑️ Удаление профиля
 async def confirm_delete_profile(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id):
     has_profile = await check_user_profile_exist(user_id)
     if not has_profile:
@@ -247,7 +205,6 @@ async def handle_profile_delete_callback(update: Update, context: ContextTypes.D
 
 
 async def delete_profile_from_db(user_id: int):
-    """Асинхронная обёртка для синхронного удаления."""
     return await asyncio.to_thread(_sync_delete_profile_from_db, user_id)
 
 
@@ -285,7 +242,6 @@ def _sync_delete_profile_from_db(user_id: str):
 
 
 async def get_profile_from_db(user_id: str):
-    """Асинхронная обёртка для синхронного получения профиля пользователя."""
     return await asyncio.to_thread(_sync_get_profile_from_db, user_id)
 
 
@@ -352,8 +308,8 @@ def format_profile_answers(answers: dict) -> str:
         balance = lifestyle[4] if len(lifestyle) > 4 else ""
 
         lifestyle_text = f"Занимается: {occupation}. "
-        # if priorities:
-        #    lifestyle_text += f"Приоритеты: {priorities}. "
+        if priorities:
+            lifestyle_text += f"Приоритеты: {priorities}. "
         if routine:
             lifestyle_text += f"Типичный день: {routine}. "
         if health_factors:

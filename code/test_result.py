@@ -19,6 +19,7 @@ DB_PARAMS1 = {
     "password": os.getenv("DB_PASSWORD"),
 }
 
+
 async def save_test_result(user_id: int, test_type: str, score: int):
     await asyncio.to_thread(_sync_save_test_result, user_id, test_type, score)
 
@@ -121,9 +122,9 @@ def _sync_delete_test_results(user_id: int):
 
         if deleted > 0:
             conn.commit()
-            print(f"[DELETE TESTS] Удалено {deleted} записей для user_id={user_id}")
-        else:
-            print(f"[DELETE TESTS] Нет записей для user_id={user_id}")
+            # print(f"[DELETE TESTS] Удалено {deleted} записей для user_id={user_id}")
+        # else:
+            # print(f"[DELETE TESTS] Нет записей для user_id={user_id}")
 
         cur.close()
     except Exception as e:
@@ -145,7 +146,6 @@ async def create_tests_chart(user_id: int, period_days: int = 30) -> BytesIO:
     try:
         conn = await asyncpg.connect(**DB_PARAMS1)
 
-        # Получаем все результаты тестов за период
         records = await conn.fetch("""
             SELECT test_type, test_result, datetime 
             FROM tests_results 
@@ -156,7 +156,6 @@ async def create_tests_chart(user_id: int, period_days: int = 30) -> BytesIO:
         if not records:
             return None
 
-        # Группируем результаты по типам тестов
         test_data = {}
         for record in records:
             test_type = record['test_type']
@@ -165,16 +164,13 @@ async def create_tests_chart(user_id: int, period_days: int = 30) -> BytesIO:
             test_data[test_type]['dates'].append(record['datetime'])
             test_data[test_type]['scores'].append(record['test_result'])
 
-        # Создаем график
         plt.figure(figsize=(12, 6))
 
-        # Для каждого типа теста добавляем линию
         for test_type, data in test_data.items():
             dates = data['dates']
             scores = data['scores']
             plt.plot(dates, scores, marker='o', label=test_type.upper())
 
-        # Настройки графика
         plt.title(f'Динамика результатов тестов за {period_days} дней')
         plt.xlabel('Дата')
         plt.ylabel('Баллы')
@@ -183,7 +179,6 @@ async def create_tests_chart(user_id: int, period_days: int = 30) -> BytesIO:
         plt.xticks(rotation=45)
         plt.tight_layout()
 
-        # Сохраняем в буфер
         buf = BytesIO()
         plt.savefig(buf, format='png', dpi=100)
         buf.seek(0)

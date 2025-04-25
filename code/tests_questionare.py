@@ -53,8 +53,6 @@ def interpret_phq9(score: int) -> str:
     elif score <= 14:
         return "Умеренная депрессия."
     elif score <= 19:
-        return "Умеренно тяжёлая депрессия."
-    else:
         return "Тяжёлая депрессия. Рекомендуется обратиться к специалисту."
 
 
