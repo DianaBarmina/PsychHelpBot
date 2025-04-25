@@ -3,6 +3,7 @@ import os
 from dotenv import load_dotenv
 import time
 import re
+from find_contacts import find_and_format_contacts
 
 load_dotenv()
 
@@ -211,9 +212,9 @@ def generate_empathic_response(prompt=None,
         "Вот чек-лист безопасности, который ты обязан соблюдать:\n"
         "1. Не обещай, что 'всё будет хорошо'.\n"
         "2. Не ставь диагнозов.\n"
-        "3. Не поощряй избегание, изоляцию или отказ от действий.\n"
-        "4. Не пиши, что ты заменяешь терапевта или профессиональную помощь.\n"
-        "5. Не давай медицинских или терапевтических рекомендаций.\n"
+        "3. Не пиши, что ты заменяешь терапевта или профессиональную помощь.\n"
+        "4. Не поощряй избегание, изоляцию или отказ от действий.\n"
+        "5. Ты можешь давать только легкие терапевтические рекомендации.\n"                                             #не давай медицинский и терапевтических рекомендаций
         "6. Поощряй обращение за профессиональной помощью, если это уместно.\n"
         "7. Не принижай чувства пользователя. Уважай его состояние.\n"
         "8. Используй поддерживающий, не осуждающий тон.\n"
@@ -236,6 +237,18 @@ def generate_empathic_response(prompt=None,
     if gad_results:
         system_prompt += f"\nРезультаты теста GAD (тревожность): {gad_results}."
 
+    '''contacts_info = find_and_format_contacts(
+        user_text=prompt,
+        emotions=None,
+        phq_score=phq_results,
+        gad_score=gad_results
+    )
+    print(contacts_info)
+    if contacts_info:
+        system_prompt += f"\nВставь подходящие контакты бесплатной психологической помощи в предложенном формате: {contacts_info}." \
+                         + "Предложи все или один из них, только если это действительно необходимо: пользователь запрашивал или у него кризисная ситуация"
+    '''
+
     if prompt is None:
         prompt = "Окажи мне психологическую поддержку или дай рекомендации к кому обратиться."
 
@@ -255,7 +268,19 @@ def generate_empathic_response(prompt=None,
     only_response = phq_results is not None or gad_results is not None
     emotions, response_text = extract_emotions_and_response(full_response, only_response=only_response)
 
-    return response_text, emotions
+    contacts_info = find_and_format_contacts(
+        user_text=prompt,
+        emotions=emotions,
+        phq_score=phq_results,
+        gad_score=gad_results
+    )
+
+    if contacts_info:
+        final_response = f"{response_text}\n\n[Контакты помощи]:\n{contacts_info}"
+    else:
+        final_response = response_text
+    return final_response, emotions
+    #return response_text, emotions
 
 
 # Предположим, api_key и lang уже определены

@@ -18,6 +18,8 @@ from save_emotions import save_emotions_to_db, handle_delete_emotions_callback, 
     delete_user_emotions, check_emotions_exist, get_emotions_stats, create_emotions_chart
 from voice_convert import convert_ogg_to_wav
 from confidential import save_user_consent, check_user_consent, consent_text, delete_user_consent
+from contacts import contacts_list
+from find_contacts import get_all_contacts_text
 
 
 AudioSegment.converter = "C:\\ffmpeg\\ffmpeg-7.1.1-essentials_build\\bin\\ffmpeg.exe"
@@ -63,6 +65,7 @@ def send_personalized_keyboard(is_checked):
     keyboard = [
         [KeyboardButton("Пройти тест на депрессию")],
         [KeyboardButton("Пройти тест на тревожность")],
+        [KeyboardButton("Получить контакты бесплатной помощи")],
     ]
 
     if is_checked:
@@ -137,11 +140,9 @@ def predict_emotion(audio_path):
     waveform, sr = sf.read(audio_path)
     waveform = torch.tensor(waveform).float()
 
-    # Если несколько каналов (стерео), оставим только один
     if waveform.ndim > 1:
         waveform = waveform.mean(dim=1)
 
-    # Приведение к нужной форме
     inputs = feature_extractor(waveform, sampling_rate=sr, return_tensors="pt", padding=True)
 
     with torch.no_grad():
@@ -173,7 +174,6 @@ async def send_questionnaire_question(update: Update, context: ContextTypes.DEFA
     questionnaire = context.user_data['test']
     idx = context.user_data['question_index']
 
-    # Проверяем, нужно ли отправить вступительное сообщение
     if idx == 0:
         intro_text = "Как часто вас беспокоили следующие проблемы за последние 2 недели?"
         keyboard = [
@@ -187,7 +187,6 @@ async def send_questionnaire_question(update: Update, context: ContextTypes.DEFA
             await update.message.reply_text(intro_text, reply_markup=reply_markup)
         return
 
-    # Отправка обычного вопроса теста
     question = questionnaire.get_question(idx - 1)  # -1 потому что первый индекс теперь для вступления
 
     keyboard = [
@@ -200,53 +199,6 @@ async def send_questionnaire_question(update: Update, context: ContextTypes.DEFA
         await update.callback_query.message.edit_text(question, reply_markup=reply_markup)
     else:
         await update.message.reply_text(question, reply_markup=reply_markup)
-
-
-async def emotions_period_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-
-    user_id = query.from_user.id
-    checked_user = await check_user_consent(user_id)
-
-    emotions_type = context.user_data.get('emotions_type')
-
-    period_map = {
-        "emotions_week": 7,
-        "emotions_month": 30,
-        "emotions_3months": 90,
-        "emotions_year": 365
-    }
-
-    period_days = period_map.get(query.data, 7)
-    period_name = query.data.replace("emotions_", "").replace("3months", "3 месяца")
-
-    try:
-        # Получаем данные из БД
-        #stats = await get_emotions_stats(checked_user, period_days)
-        stats = await get_emotions_stats(checked_user, period_days, emotions_type)  # Передаем тип эмоций
-
-        if not stats:
-            await query.edit_message_text(f"Нет данных об эмоциях за {period_name}")
-            return
-
-        # Создаем диаграмму
-        #chart = await create_emotions_chart(stats, period_name)
-        chart = await create_emotions_chart(stats, period_name, emotions_type)  # Передаем тип для стилизации
-
-        # Отправляем изображение
-        await context.bot.send_photo(
-            chat_id=query.message.chat_id,
-            photo=chart,
-            caption=f"Статистика {'текстовых' if emotions_type == 'text' else 'голосовых'} эмоций за {period_name}"
-        )
-
-        # Удаляем сообщение с кнопками
-        await query.message.delete()
-
-    except Exception as e:
-        print(f"Error generating emotions chart: {e}")
-        await query.edit_message_text("Произошла ошибка при генерации статистики")
 
 
 async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -583,33 +535,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if text == "Мои тесты: история":
         await handle_tests_history(update, context)
-        '''if not checked_user:
-            await update.message.reply_text(
-                "Вы не можете просмотреть историю тестов, так как не дали согласие на обработку данных",
-                parse_mode="Markdown"
-            )
-            return
+        return
 
-        context.user_data["checked_user"] = checked_user
-        if not await check_emotions_exist(checked_user):
-            await update.message.reply_text(
-                "У вас пока нет пройденных тестов",
-                parse_mode="Markdown"
-            )
-            return
-
-        keyboard = [
-            [InlineKeyboardButton("За неделю", callback_data="tests_period_week")],
-            [InlineKeyboardButton("За месяц", callback_data="tests_period_month")],
-            [InlineKeyboardButton("За 3 месяца", callback_data="tests_period_3months")],
-            [InlineKeyboardButton("За год", callback_data="tests_period_year")]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-
-        await update.message.reply_text(
-            "Выберите период для просмотра результатов тестов:",
-            reply_markup=reply_markup
-        )'''
+    if text == "Получить контакты бесплатной помощи":
+        message_text = get_all_contacts_text(contacts_list)
+        await update.message.reply_text(message_text, parse_mode="Markdown")
         return
 
     if text == "Пройти тест на депрессию":
@@ -670,7 +600,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def emotions_type_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработчик выбора типа эмоций"""
     query = update.callback_query
     await query.answer()
     print(query.data.split('_')[-1])
@@ -691,8 +620,48 @@ async def emotions_type_callback(update: Update, context: ContextTypes.DEFAULT_T
     )
 
 
+async def emotions_period_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    user_id = query.from_user.id
+    checked_user = await check_user_consent(user_id)
+
+    emotions_type = context.user_data.get('emotions_type')
+
+    period_map = {
+        "emotions_week": 7,
+        "emotions_month": 30,
+        "emotions_3months": 90,
+        "emotions_year": 365
+    }
+
+    period_days = period_map.get(query.data, 7)
+    period_name = query.data.replace("emotions_", "").replace("3months", "3 месяца")
+
+    try:
+        stats = await get_emotions_stats(checked_user, period_days, emotions_type)
+
+        if not stats:
+            await query.edit_message_text(f"Нет данных об эмоциях за {period_name}")
+            return
+
+        chart = await create_emotions_chart(stats, period_name, emotions_type)
+
+        await context.bot.send_photo(
+            chat_id=query.message.chat_id,
+            photo=chart,
+            caption=f"Статистика {'текстовых' if emotions_type == 'text' else 'голосовых'} эмоций за {period_name}"
+        )
+
+        await query.message.delete()
+
+    except Exception as e:
+        print(f"Error generating emotions chart: {e}")
+        await query.edit_message_text("Произошла ошибка при генерации статистики")
+
+
 async def handle_tests_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработчик просмотра истории тестов"""
     user_id = update.message.from_user.id
     checked_user = await check_user_consent(user_id)
 
@@ -725,7 +694,6 @@ async def handle_tests_history(update: Update, context: ContextTypes.DEFAULT_TYP
 
 
 async def tests_period_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработчик выбора периода для тестов"""
     query = update.callback_query
     await query.answer()
 
@@ -733,13 +701,14 @@ async def tests_period_callback(update: Update, context: ContextTypes.DEFAULT_TY
     checked_user = await check_user_consent(user_id)
 
     period_map = {
-        "tests_week": 7,
-        "tests_month": 30,
-        "tests_3months": 90,
-        "tests_year": 365
+        "tests_period_week": 7,
+        "tests_period_month": 30,
+        "tests_period_3months": 90,
+        "tests_period_year": 365
     }
-
+    print(query.data)
     period_days = period_map.get(query.data, 30)
+    print(period_days)
     period_name = query.data.replace("tests_period", "").replace("3months", "3 месяца")
 
     try:

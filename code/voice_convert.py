@@ -6,11 +6,11 @@ def convert_ogg_to_wav(ogg_path, wav_path):
     try:
         subprocess.run([
             AudioSegment.converter,
-            "-y",  # перезаписывать без подтверждения
-            "-i", ogg_path,  # входной файл
-            "-ar", "16000",  # частота дискретизации
-            "-ac", "1",  # моно
-            wav_path  # выходной файл
+            "-y",
+            "-i", ogg_path,
+            "-ar", "16000",
+            "-ac", "1",
+            wav_path
         ], check=True)
     except subprocess.CalledProcessError as e:
         print(f"Ошибка при вызове ffmpeg: {e}")
