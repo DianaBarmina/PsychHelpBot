@@ -175,7 +175,7 @@ async def send_questionnaire_question(update: Update, context: ContextTypes.DEFA
     idx = context.user_data['question_index']
 
     if idx == 0:
-        intro_text = "Как часто вас беспокоили следующие проблемы за последние 2 недели?"
+        intro_text = "Для получения результата нужно ответить на все вопросы"
         keyboard = [
             [InlineKeyboardButton("Начать тест", callback_data="start_questions")]
         ]
@@ -208,9 +208,9 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
 
     user_id = query.from_user.id
     checked_user = await check_user_consent(user_id)
-    #new
+
     if data == "start_questions":
-        context.user_data['question_index'] = 1  # Начинаем с первого вопроса
+        context.user_data['question_index'] = 1
         await send_questionnaire_question(update, context)
         return
 
@@ -232,7 +232,7 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         questionnaire = context.user_data['test']
         index = context.user_data['question_index']
 
-        # Раннее завершение PHQ-9
+        # Раннее завершение PHQ-9 (PHQ-2)
         if questionnaire.name.startswith("PHQ") and not context.user_data.get("phq9_short_check_done"):
             if index == 3:
                 context.user_data['phq9_short_check_done'] = True
@@ -254,14 +254,16 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
                     if checked_user:
                         await save_test_result(checked_user, "phq_2", total)
                         full_profile = await get_formatted_profile_from_db(checked_user)
+                        reply_markup = send_personalized_keyboard(is_checked=True)
                     else:
                         full_profile = None
+                        reply_markup = send_personalized_keyboard(is_checked=False)
 
                     #response = generate_response_for_emotion(phq_results=phq_results, profile=full_profile)
 
                     response, emotions = generate_empathic_response(phq_results=phq_results, profile=full_profile)
 
-                    await query.message.reply_text(response)
+                    await query.message.reply_text(response, reply_markup=reply_markup)
                 return
 
         if index < len(questionnaire.questions)+1:
@@ -283,21 +285,18 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
             if checked_user:
                 await save_test_result(checked_user, test_type, total)
                 full_profile = await get_formatted_profile_from_db(checked_user)
+                reply_markup = send_personalized_keyboard(is_checked=True)
             else:
                 full_profile = None
+                reply_markup = send_personalized_keyboard(is_checked=False)
 
             if questionnaire == PHQ9:
-                #response = generate_response_for_emotion(phq_results=results,
-                #                                         profile=full_profile
-                #                                         )
                 response, emotions = generate_empathic_response(phq_results=results, profile=full_profile)
             else:
-                #response = generate_response_for_emotion(gad_results=results,
-                #                                         profile=full_profile
-                #                                         )
                 response, emotions = generate_empathic_response(gad_results=results, profile=full_profile)
 
-            await query.message.reply_text(response)
+            await query.message.reply_text(response, reply_markup=reply_markup)
+
 
             # await query.message.reply_text(
             #    "Вы можете пройти другой тест или отправить голосовое сообщение.",
@@ -428,7 +427,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 voice_emotions=[voice_emotion]
             )
 
-        await update.message.reply_text(response)
+        await update.message.reply_text(response, parse_mode="Markdown")
 
     except Exception as e:
         await update.message.reply_text(f"Ошибка при распознавании: {e}")
@@ -594,7 +593,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['phq9_short_check_done'] = False
 
     reply_keyboard = send_personalized_keyboard(is_checked=False)
-    await update.message.reply_text(f"Начинаем тест *{questionnaire.name}*", parse_mode="Markdown",
+    await update.message.reply_text(f"Начинаем тест *{questionnaire.name}*\nКак часто вас беспокоили следующие "
+                                    f"проблемы за последние 2 недели?", parse_mode="Markdown",
                                     reply_markup=reply_keyboard)
     await send_questionnaire_question(update, context)
 

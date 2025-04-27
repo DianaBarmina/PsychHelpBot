@@ -6,8 +6,6 @@ import re
 from find_contacts import find_and_format_contacts
 
 load_dotenv()
-
-# Получение переменных
 MISTRALAI_API_KEY = os.getenv("MISTRALAI_API_KEY")
 
 
@@ -43,6 +41,7 @@ def generate_response_for_emotion(prompt=None,
                                   phq_results=None,
                                   gad_results=None,
                                   ):
+    """Базовая функция для генерации ответа, когда все эмоции уже определены + отсутствие правил безопасности"""
     time.sleep(1)
     client = Mistral(api_key=MISTRALAI_API_KEY)
 
@@ -87,6 +86,7 @@ def generate_response_for_emotion(prompt=None,
 
 
 def classificate_emotions(prompt):
+    """Функция для определения эмоций в тексте моделью Mistral"""
     time.sleep(1)
     client = Mistral(api_key=MISTRALAI_API_KEY)
 
@@ -162,7 +162,7 @@ def extract_emotions_and_response(response, only_response=True):
     Извлекает эмоции и текст ответа из ответа модели.
     Ожидается, что модель вернёт:
     Эмоции: эмоция1, эмоция2, эмоция3
-    Ответ: эмпатичный текст...
+    Ответ: текст...
     """
     response_match = re.search(r'Ответ:\s*(.+)', response, re.DOTALL)
     response_text = response_match.group(1).strip() if response_match else response.strip()
@@ -258,7 +258,7 @@ def generate_empathic_response(prompt=None,
     ]
 
     completion = client.chat.complete(
-        model="open-mistral-nemo",  # Или другая доступная модель
+        model="open-mistral-nemo",
         messages=messages
         # max_tokens=500
     )
@@ -283,7 +283,6 @@ def generate_empathic_response(prompt=None,
     #return response_text, emotions
 
 
-# Предположим, api_key и lang уже определены
 if __name__ == "__main__":
     client = Mistral(api_key="c7Py7BhqBgXT1rfy1ceTQsA2nY6ssirn")
 
@@ -291,7 +290,7 @@ if __name__ == "__main__":
         "Ты психолог. "
         "Ты умеешь хорошо помогать людям"
     )
-    # Убедитесь, что lang определён
+
     prompt = 'мне грустно'
 
     messages = [

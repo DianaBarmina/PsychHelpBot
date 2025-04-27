@@ -3,11 +3,6 @@ import re
 
 
 def extract_score(score_text):
-    """
-    Извлекает числовое значение баллов из строки вида:
-    'результат phq-9 15 баллов, тяжелая депрессия'
-    Возвращает int или None, если не удалось найти баллы.
-    """
     if not score_text:
         return None
 
@@ -19,18 +14,12 @@ def extract_score(score_text):
 
 
 def extract_phq_info(phq_text: str) -> tuple[int | None, str | None]:
-    """
-    Извлекает номер теста (2 или 9) и количество баллов.
-    Возвращает кортеж: (баллы, тип теста)
-    """
     if not phq_text:
         return None, None
 
-    # Определим тип теста
     test_match = re.search(r'phq[-–]?(\d)', phq_text.lower())
     test_type = test_match.group(1) if test_match else None
 
-    # Извлекаем баллы
     score_match = re.search(r'(\d+)\s*балл', phq_text.lower())
     score = int(score_match.group(1)) if score_match else None
 
@@ -38,9 +27,6 @@ def extract_phq_info(phq_text: str) -> tuple[int | None, str | None]:
 
 
 def is_high_phq_score(phq_text: str) -> bool:
-    """
-    Проверяет, превышен ли критический порог для PHQ-2 или PHQ-9.
-    """
     score, test_type = extract_phq_info(phq_text)
 
     if score is None or test_type is None:
@@ -62,7 +48,6 @@ def find_and_format_contacts(user_text: str,
                              ):
     relevant_contacts = []
 
-    # Ключевые слова из текста и эмоций
     keywords = set()
     if user_text:
         keywords.update(user_text.lower().split())
@@ -78,19 +63,14 @@ def find_and_format_contacts(user_text: str,
         if keywords & contact_keywords:
             relevant_contacts.append(contact)
 
-    # Добавление кризисных служб при высоких баллах PHQ/GAD
-    print(phq_score, gad_score)
     if phq_score is None:
         phq_score = -1
     else:
-        phq_score = is_high_phq_score(phq_score)#extract_score(phq_score)
+        phq_score = is_high_phq_score(phq_score)
     if gad_score is None:
         gad_score = -1
     else:
         gad_score = extract_score(gad_score)
-    #phq_score = extract_score(phq_score)  # → 15
-    #gad_score = extract_score(gad_score)  # → 12
-    print(phq_score, gad_score)
 
     if phq_score or gad_score >= 15 or "суицид" in user_text.lower() or "селфхарм" in user_text.lower():
         for contact in contacts_list:
@@ -118,10 +98,6 @@ def find_and_format_contacts(user_text: str,
 
 
 def get_all_contacts_text(contacts: list) -> str:
-    """
-    Формирует и возвращает читаемый текст со всеми контактами из списка.
-    Подходит для отправки в Telegram-боте.
-    """
     if not contacts:
         return "Контакты не найдены."
 
@@ -142,7 +118,6 @@ def get_all_contacts_text(contacts: list) -> str:
         if contact.get("notes"):
             lines.append(f"ℹ️ {contact['notes']}")
 
-        # Разделитель между контактами
         lines.append("──────────────")
         response_lines.extend(lines)
 
