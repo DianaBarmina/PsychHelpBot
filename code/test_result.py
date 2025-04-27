@@ -80,7 +80,6 @@ async def handle_delete_tests_callback(update: Update, context: ContextTypes.DEF
             await query.message.edit_text("⚠️ Ошибка при удалении тестов.")
             print(f"[DELETE TESTS ERROR] {e}")
     else:
-        print(data)
         await query.message.edit_text("Удаление отменено.----")
 
 

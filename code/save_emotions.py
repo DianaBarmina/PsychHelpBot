@@ -27,16 +27,9 @@ def hash_user_id(user_id: int) -> bytes:
 
 async def save_emotions_to_db(user_id: int, text_emotions: list[str], voice_emotions: list[str]):
     today = date.today()
-    # hashed_id = hash_user_id(user_id)
-
-    #conn = await asyncpg.connect(**DB_PARAMS)
-    #cursor = conn.cursor()
 
     try:
-        # Устанавливаем соединение
         conn = await asyncpg.connect(**DB_PARAMS1)
-
-        # Проверяем существование записи
         exists = await conn.fetchval(
             """
             SELECT 1 FROM user_emotions 
@@ -46,7 +39,6 @@ async def save_emotions_to_db(user_id: int, text_emotions: list[str], voice_emot
         )
 
         if exists:
-            # Обновляем существующую запись
             await conn.execute(
                 """
                 UPDATE user_emotions
@@ -58,7 +50,6 @@ async def save_emotions_to_db(user_id: int, text_emotions: list[str], voice_emot
                 text_emotions, voice_emotions, user_id, today
             )
         else:
-            # Вставляем новую запись
             await conn.execute(
                 """
                 INSERT INTO user_emotions 
@@ -70,7 +61,7 @@ async def save_emotions_to_db(user_id: int, text_emotions: list[str], voice_emot
 
     except Exception as e:
         print(f"Ошибка при сохранении эмоций: {e}")
-        raise  # Можно обработать ошибку по-другому
+        raise
     finally:
         if 'conn' in locals():
             await conn.close()
@@ -166,7 +157,6 @@ def _sync_delete_user_emotions(user_id: int):
 
 
 async def get_emotions_stats1(user_id: int, period_days: int) -> dict:
-    """Получаем статистику эмоций за указанный период"""
     end_date = date.today()
     start_date = end_date - timedelta(days=period_days)
 
@@ -188,7 +178,6 @@ async def get_emotions_stats1(user_id: int, period_days: int) -> dict:
 
 
 async def create_emotions_chart1(emotions_data: dict, period: str) -> BytesIO:
-    """Создаем столбчатую диаграмму и возвращаем как BytesIO"""
     if not emotions_data:
         return None
 
@@ -198,7 +187,6 @@ async def create_emotions_chart1(emotions_data: dict, period: str) -> BytesIO:
     plt.figure(figsize=(10, 6))
     bars = plt.bar(emotions, counts, color='skyblue')
 
-    # Добавляем значения на столбцы
     for bar in bars:
         height = bar.get_height()
         plt.text(bar.get_x() + bar.get_width() / 2., height,
@@ -218,7 +206,6 @@ async def create_emotions_chart1(emotions_data: dict, period: str) -> BytesIO:
 
 
 async def get_emotions_stats(user_id: int, period_days: int, emotions_type: str) -> dict:
-    """Получаем статистику эмоций за указанный период"""
     end_date = date.today()
     start_date = end_date - timedelta(days=period_days)
 
@@ -258,10 +245,9 @@ async def create_emotions_chart(emotions_data: dict, period: str, emotions_type:
     counts = list(emotions_data.values())
 
     plt.figure(figsize=(10, 6))
-    color = '#4CAF50' if emotions_type == 'text' else '#2196F3'  # Зеленый для текста, синий для голоса
+    color = '#4CAF50' if emotions_type == 'text' else '#2196F3'
     bars = plt.bar(emotions, counts, color=color)
 
-    # Добавляем значения на столбцы
     for bar in bars:
         height = bar.get_height()
         plt.text(bar.get_x() + bar.get_width() / 2., height,

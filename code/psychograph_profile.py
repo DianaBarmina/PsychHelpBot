@@ -2,7 +2,7 @@ import json
 import psycopg2
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ContextTypes
-from db import DB_PARAMS, load_key, encrypt_user_id, decrypt_user_id, hash_user_id
+from db import DB_PARAMS, hash_user_id
 import asyncio
 from psychographic_questions import psychographic_questions
 
